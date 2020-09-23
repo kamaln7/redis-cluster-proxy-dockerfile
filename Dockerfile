@@ -1,38 +1,21 @@
-FROM alpine:3.11 as build
+FROM ubuntu:18.04 as build-env
 
-RUN apk add --no-cache gcc musl-dev linux-headers openssl-dev make
+# Install dependencies
+RUN apt-get update && apt-get install -y git gcc make libhiredis0.13
 
-RUN addgroup -S app && adduser -S -G app app 
-RUN chown -R app:app /opt
-RUN chown -R app:app /usr/local
+RUN git clone https://github.com/RedisLabs/redis-cluster-proxy.git
 
-# There is a bug in CMake where we cannot build from the root top folder
-# So we build from /opt
-COPY --chown=app:app . /opt
-WORKDIR /opt
+WORKDIR /redis-cluster-proxy/
 
-USER app
-RUN [ "make", "install" ]
+RUN git checkout 1.0
 
-FROM alpine:3.11 as runtime
+RUN make
 
-RUN apk add --no-cache libstdc++
-RUN apk add --no-cache strace
-RUN apk add --no-cache python3
-RUN apk add --no-cache redis
 
-RUN addgroup -S app && adduser -S -G app app 
-COPY --chown=app:app --from=build /usr/local/bin/redis-cluster-proxy /usr/local/bin/redis-cluster-proxy
-RUN chmod +x /usr/local/bin/redis-cluster-proxy
-RUN ldd /usr/local/bin/redis-cluster-proxy
+FROM ubuntu:18.04
 
-# Copy source code for gcc
-COPY --chown=app:app --from=build /opt /opt
+WORKDIR /bin/
 
-# Now run in usermode
-USER app
-WORKDIR /home/app
+COPY --from=build-env redis-cluster-proxy/src/redis-cluster-proxy .
 
-ENTRYPOINT ["/usr/local/bin/redis-cluster-proxy"]
-EXPOSE 7777
-CMD ["redis-cluster-proxy"]
+ENTRYPOINT ["/bin/redis-cluster-proxy"]
